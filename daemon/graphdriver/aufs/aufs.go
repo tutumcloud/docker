@@ -36,6 +36,8 @@ import (
 	mountpk "github.com/dotcloud/docker/pkg/mount"
 	"github.com/dotcloud/docker/utils"
 	"strconv"
+	"io/ioutil"
+	"regexp"
 )
 
 var (
@@ -510,6 +512,21 @@ func (a *Driver) unLimitContainer(id string) error {
 		opt2 := "/" + id + "/d"
 		sedCmd := exec.Command(cmd, opt1, opt2, "/etc/fstab")
 		err = sedCmd.Run()
+		if err != nil {
+			return err
+		}
+
+		data, err := ioutil.ReadFile("/etc/fstab")
+		if err != nil {
+			return err
+		}
+		dataString := string(data)
+		var deleteRegexp = regexp.MustCompile(containerQuotaFile + ".*\n")
+		newDataString := deleteRegexp.ReplaceAllString(dataString, "")
+
+		//Convert string to []byte format, and write to file.
+		newData := []byte(newDataString)
+		err = ioutil.WriteFile("/etc/fstab", newData, 0644)
 		if err != nil {
 			return err
 		}
