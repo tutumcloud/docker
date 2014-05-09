@@ -165,7 +165,7 @@ func (d *Driver) subvolumesDirId(id string) string {
 	return path.Join(d.subvolumesDir(), id)
 }
 
-func (d *Driver) Create(id string, parent string) error {
+func (d *Driver) Create(id string, parent string, quota int64) error {
 	subvolumes := path.Join(d.home, "subvolumes")
 	if err := os.MkdirAll(subvolumes, 0700); err != nil {
 		return err
