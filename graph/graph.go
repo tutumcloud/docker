@@ -36,7 +36,11 @@ func NewGraph(root string, driver graphdriver.Driver) (*Graph, error) {
 		return nil, err
 	}
 	// Create the root directory if it doesn't exists
-	if err := os.MkdirAll(root, 0700); err != nil && !os.IsExist(err) {
+	if err := os.MkdirAll(root, 0711); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+
+	if err := os.Chmod(root, 0711); err != nil {
 		return nil, err
 	}
 
@@ -294,6 +298,9 @@ func SetupInitLayer(initLayer string) error {
 					if err := os.Symlink(typ, path.Join(initLayer, pth)); err != nil {
 						return err
 					}
+				}
+				if err := os.Chown(path.Join(initLayer, pth), 100000, 100000); err != nil {
+					return err
 				}
 			} else {
 				return err

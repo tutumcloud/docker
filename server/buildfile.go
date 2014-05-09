@@ -475,7 +475,7 @@ func (b *buildFile) addContext(container *daemon.Container, orig, dest string, d
 		resPath = path.Join(destPath, path.Base(origPath))
 	}
 
-	return fixPermissions(resPath, 0, 0)
+	return fixPermissions(resPath, 100000, 100000)
 }
 
 func (b *buildFile) runContextCommand(args string, allowRemote bool, allowDecompression bool, cmdName string) error {
@@ -870,14 +870,14 @@ func copyAsDirectory(source, destination string, destinationExists bool) error {
 		}
 
 		for _, file := range files {
-			if err := fixPermissions(filepath.Join(destination, file.Name()), 0, 0); err != nil {
+			if err := fixPermissions(filepath.Join(destination, file.Name()), 100000, 100000); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	return fixPermissions(destination, 0, 0)
+	return fixPermissions(destination, 100000, 100000)
 }
 
 func fixPermissions(destination string, uid, gid int) error {
