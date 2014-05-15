@@ -507,26 +507,25 @@ func (a *Driver) unLimitContainer(id string) error {
 			return err
 		}
 
-		cmd := "sed"
-		opt1 := "-i"
-		opt2 := "/" + id + "/d"
-		sedCmd := exec.Command(cmd, opt1, opt2, "/etc/fstab")
-		err = sedCmd.Run()
-		if err != nil {
-			return err
-		}
-
+		var deleteRegexp = regexp.MustCompile(".*" + containerFilesystem + ".*\n")
 		data, err := ioutil.ReadFile("/etc/fstab")
 		if err != nil {
 			return err
 		}
-		dataString := string(data)
-		var deleteRegexp = regexp.MustCompile(containerQuotaFile + ".*\n")
-		newDataString := deleteRegexp.ReplaceAllString(dataString, "")
-
-		//Convert string to []byte format, and write to file.
+		newDataString := deleteRegexp.ReplaceAllString(string(data), "")
 		newData := []byte(newDataString)
 		err = ioutil.WriteFile("/etc/fstab", newData, 0644)
+		if err != nil {
+			return err
+		}
+
+		data, err = ioutil.ReadFile("/etc/mtab")
+		if err != nil {
+			return err
+		}
+		newDataString = deleteRegexp.ReplaceAllString(string(data), "")
+		newData = []byte(newDataString)
+		err = ioutil.WriteFile("/etc/mtab", newData, 0644)
 		if err != nil {
 			return err
 		}
