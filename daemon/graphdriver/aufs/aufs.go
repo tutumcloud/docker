@@ -444,7 +444,7 @@ func rollbackMount(target string, err error) {
 func (a *Driver) limitContainer(id string, quota int64) error {
 	// Make sure container's quota dir exists
 	if err := os.MkdirAll(path.Join(a.rootPath(), "quota"), 0755); err != nil {
-		return err
+		return fmt.Errorf("Error creating quota folder: %s", err)
 	}
 	containerQuotaFile := path.Join(a.rootPath(), "quota", id) + ".ext4"
 	containerFilesystem := path.Join(a.rootPath(), "diff", id)
@@ -455,7 +455,7 @@ func (a *Driver) limitContainer(id string, quota int64) error {
 	truncateCmd := exec.Command(cmd, containerQuotaFile, opt1, opt2)
 	err := truncateCmd.Run()
 	if err != nil {
-		return err
+		return fmt.Errorf("Error on truncate: %s", err)
 	}
 
 	cmd = "/sbin/mkfs"
@@ -465,17 +465,17 @@ func (a *Driver) limitContainer(id string, quota int64) error {
 	mkfsCmd := exec.Command(cmd, opt1, "ext4", opt2, containerQuotaFile, opt3)
 	err = mkfsCmd.Run()
 	if err != nil {
-		return err
+		return fmt.Errorf("Error on mkfs: %s", err)
 	}
 
 	text := containerQuotaFile + " " + containerFilesystem + " ext4 " + "loop,rw,usrquota,grpquota 0 0\n"
 	f, err := os.OpenFile("/etc/fstab", os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error reading /etc/fstab (mount): %s", err)
 	}
 	_, err = f.WriteString(text)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error writing /etc/fstab (mount): %s", err)
 	}
 	f.Close()
 
@@ -483,12 +483,12 @@ func (a *Driver) limitContainer(id string, quota int64) error {
 	mountCmd := exec.Command(cmd, containerFilesystem)
 	err = mountCmd.Run()
 	if err != nil {
-		return err
+		return fmt.Errorf("Error on mount: %s", err)
 	}
 
 	err = os.Chown(containerFilesystem, 100000, 100000)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error on chown of mounted folder: %s", err)
 	}
 	return nil
 }
@@ -499,40 +499,40 @@ func (a *Driver) unLimitContainer(id string) error {
 
 	mounted, err := mountpk.Mounted(containerFilesystem)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error checking mount status: %s", err)
 	}
 	if mounted {
 		err := mountpk.Unmount(containerFilesystem)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error when unmounting: %s", err)
 		}
 
 		var deleteRegexp = regexp.MustCompile(".*" + containerFilesystem + ".*\n")
 		data, err := ioutil.ReadFile("/etc/fstab")
 		if err != nil {
-			return err
+			fmt.Errorf("Error reading /etc/fstab (unmount): %s", err)
 		}
 		newDataString := deleteRegexp.ReplaceAllString(string(data), "")
 		newData := []byte(newDataString)
 		err = ioutil.WriteFile("/etc/fstab", newData, 0644)
 		if err != nil {
-			return err
+			fmt.Errorf("Error writing /etc/fstab (unmount): %s", err)
 		}
 
 		data, err = ioutil.ReadFile("/etc/mtab")
 		if err != nil {
-			return err
+			return fmt.Errorf("Error reading /etc/mtab (unmount): %s", err)
 		}
 		newDataString = deleteRegexp.ReplaceAllString(string(data), "")
 		newData = []byte(newDataString)
 		err = ioutil.WriteFile("/etc/mtab", newData, 0644)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error writing /etc/mtab (unmount): %s", err)
 		}
 
 		err = os.Remove(containerQuotaFile)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error deleting quota file: %s", err)
 		}
 	}
 
