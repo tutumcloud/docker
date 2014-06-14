@@ -770,7 +770,7 @@ func NewDaemonFromDirectory(config *daemonconfig.Config, eng *engine.Engine) (*D
 	}
 
 	// Create the root directory if it doesn't exists
-	if err := os.MkdirAll(config.Root, 0700); err != nil && !os.IsExist(err) {
+	if err := os.MkdirAll(config.Root, 0711); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
 
