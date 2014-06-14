@@ -1,56 +1,52 @@
 page_title: Installation on Windows
-page_description: Please note this project is currently under heavy development. It should not be used in production.
+page_description: Docker installation on Microsoft Windows
 page_keywords: Docker, Docker documentation, Windows, requirements, virtualbox, boot2docker
 
 # Windows
 
-Docker can run on Windows using a virtualization platform like
-VirtualBox. A Linux distribution is run inside a virtual machine and
-that's where Docker will run.
+Docker Engine runs on Windows using a lightweight virtual machine. There
+is no native Windows Docker client yet, so everything is done inside the virtual
+machine.
+
+To make this process easier we designed a helper application called
+[Boot2Docker](https://github.com/boot2docker/boot2docker) to install the
+virtual machine and run the Docker daemon.
+
+## Demonstration
+
+<iframe width="640" height="480" src="//www.youtube.com/embed/oSHN8_uiZd4?rel=0" frameborder="0" allowfullscreen></iframe>
 
 ## Installation
 
-> **Note**:
-> Docker is still under heavy development! We don't recommend using it in
-> production yet, but we're getting closer with each release. Please see
-> our blog post, [Getting to Docker 1.0](
-> http://blog.docker.io/2013/08/getting-to-docker-1-0/)
+1. Download the latest release of the [Docker for Windows Installer](https://github.com/boot2docker/windows-installer/releases)
+2. Run the installer, which will install VirtualBox, MSYS-git, the boot2docker Linux ISO and the
+   Boot2Docker management tool.
+   ![](/installation/images/windows-installer.png)
+3. Run the `Boot2Docker Start` shell script from your Desktop or Program Files > Docker.
+   The Start script will ask you to enter an ssh key passphrase - the simplest
+   (but least secure) is to just hit [Enter].
 
-1. Install virtualbox from [https://www.virtualbox.org](
-   https://www.virtualbox.org) - or follow this [tutorial](
-   http://www.slideshare.net/julienbarbier42/install-virtualbox-on-windows-7).
-2. Download the latest boot2docker.iso from
-   [https://github.com/boot2docker/boot2docker/releases](
-   https://github.com/boot2docker/boot2docker/releases).
-3. Start VirtualBox.
-4. Create a new Virtual machine with the following settings:
+   ![](/installation/images/windows-boot2docker-start.png)
 
-        - Name: boot2docker
-        - Type: Linux
-        - Version: Linux 2.6 (64 bit)
-        - Memory size: 1024 MB
-        - Hard drive: Do not add a virtual hard drive
+   The `Boot2Docker Start` script will connect you to a shell session in the virtual
+   machine. If needed, it will initialize a new VM and start it.
 
-5. Open the settings of the virtual machine:
+## Upgrading
 
-    5.1. go to Storage
-    5.2. click the empty slot below Controller: IDE
-    5.3. click the disc icon on the right of IDE Secondary Master
-    5.4. click Choose a virtual CD/DVD disk file
+1. Download the latest release of the [Docker for Windows Installer](
+   https://github.com/boot2docker/windows-installer/releases)
 
-6. Browse to the path where you`ve saved the boot2docker.iso, select
-   the boot2docker.iso and click open.
+2. Run the installer, which will update the Boot2Docker management tool.
 
-7. Click OK on the Settings dialog to save the changes and close the
-   window.
+3. To upgrade your existing virtual machine, open a terminal and run:
 
-8. Start the virtual machine by clicking the green start button.
-
-9. The boot2docker virtual machine should boot now.
+        boot2docker stop
+        boot2docker download
+        boot2docker start
 
 ## Running Docker
 
-boot2docker will log you in automatically so you can start using Docker
+Boot2Docker will log you in automatically so you can start using Docker
 right away.
 
 Let's try the “hello world” example. Run
@@ -59,10 +55,29 @@ Let's try the “hello world” example. Run
 
 This will download the small busybox image and print hello world.
 
-## Observations
 
-### Persistent storage
+# Further Details
 
-The virtual machine created above lacks any persistent data storage. All
-images and containers will be lost when shutting down or rebooting the
-VM.
+The Boot2Docker management tool provides some commands:
+
+    $ ./boot2docker
+    Usage: ./boot2docker [<options>] {help|init|up|ssh|save|down|poweroff|reset|restart|config|status|info|delete|download|version} [<args>]
+
+
+## Container port redirection
+
+The latest version of `boot2docker` sets up a host only
+network adaptor on which the container's ports will be exposed.
+
+If you run a container with an exposed port:
+
+    docker run --rm -i -t -p 80:80 apache
+
+Then you should be able to access that Apache server using the IP address reported
+to you using:
+
+    boot2docker ip
+
+Typically, it is `192.168.59.103`, but it can change.
+
+For further information or to report issues, please see the [Boot2Docker site](http://boot2docker.io)
