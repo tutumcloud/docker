@@ -502,9 +502,12 @@ func (a *Driver) unLimitContainer(id string) error {
 		return fmt.Errorf("Error checking mount status: %s", err)
 	}
 	if mounted {
-		err := mountpk.Unmount(containerFilesystem)
+		cmd := "umount"
+		opt1 := "-l"
+		umountCmd := exec.Command(cmd, opt1, containerFilesystem)
+		err := umountCmd.Run()
 		if err != nil {
-			return fmt.Errorf("Error when unmounting: %s", err)
+			return fmt.Errorf("Error on umount: %s", err)
 		}
 
 		var deleteRegexp = regexp.MustCompile(".*" + containerFilesystem + ".*\n")
