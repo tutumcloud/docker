@@ -22,7 +22,7 @@ type InitFunc func(root string, options []string) (Driver, error)
 type Driver interface {
 	String() string
 
-	Create(id, parent string, quota int64) error
+	Create(id, parent string, isContainer bool) error
 	Remove(id string) error
 
 	Get(id, mountLabel string) (dir string, err error)

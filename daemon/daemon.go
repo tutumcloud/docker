@@ -606,7 +606,7 @@ func (daemon *Daemon) createRootfs(container *Container, img *image.Image) error
 		return err
 	}
 	initID := fmt.Sprintf("%s-init", container.ID)
-	if err := daemon.driver.Create(initID, img.ID, 0); err != nil {
+	if err := daemon.driver.Create(initID, img.ID, false); err != nil {
 		return err
 	}
 	initPath, err := daemon.driver.Get(initID, "")
@@ -619,7 +619,7 @@ func (daemon *Daemon) createRootfs(container *Container, img *image.Image) error
 		return err
 	}
 
-	if err := daemon.driver.Create(container.ID, initID, container.Config.DiskQuota); err != nil {
+	if err := daemon.driver.Create(container.ID, initID, true); err != nil {
 		return err
 	}
 	return nil
