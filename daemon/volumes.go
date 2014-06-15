@@ -295,6 +295,10 @@ func initializeVolume(container *Container, volPath string, binds map[string]Bin
 		return err
 	}
 
+	if err := os.Chown(source, 100000, 100000); err != nil {
+		return err
+	}
+
 	// Do not copy or change permissions if we are mounting from the host
 	if srcRW && !isBindMount {
 		if err := copyExistingContents(source, destination); err != nil {
