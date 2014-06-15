@@ -32,7 +32,6 @@ type Config struct {
 	Entrypoint      []string
 	NetworkDisabled bool
 	OnBuild         []string
-	DiskQuota       int64 //Disk quota (in MB)
 }
 
 func ContainerConfigFromJob(job *engine.Job) *Config {
@@ -53,7 +52,6 @@ func ContainerConfigFromJob(job *engine.Job) *Config {
 		Image:           job.Getenv("Image"),
 		WorkingDir:      job.Getenv("WorkingDir"),
 		NetworkDisabled: job.GetenvBool("NetworkDisabled"),
-		DiskQuota:       job.GetenvInt64("DiskQuota"),
 	}
 	job.GetenvJson("ExposedPorts", &config.ExposedPorts)
 	job.GetenvJson("Volumes", &config.Volumes)

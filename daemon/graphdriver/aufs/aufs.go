@@ -35,9 +35,7 @@ import (
 	"github.com/dotcloud/docker/pkg/label"
 	mountpk "github.com/dotcloud/docker/pkg/mount"
 	"github.com/dotcloud/docker/utils"
-	"strconv"
-	"io/ioutil"
-	"regexp"
+	"github.com/dotcloud/docker/pkg/units"
 )
 
 var (
@@ -46,6 +44,7 @@ var (
 		graphdriver.FsMagicBtrfs,
 		graphdriver.FsMagicAufs,
 	}
+	quota uint64 = 10 * 1024 * 1024 * 1024
 )
 
 func init() {
@@ -83,6 +82,7 @@ func Init(root string, options []string) (graphdriver.Driver, error) {
 		"mnt",
 		"diff",
 		"layers",
+		"quota",
 	}
 
 	a := &Driver{
@@ -107,6 +107,24 @@ func Init(root string, options []string) (graphdriver.Driver, error) {
 	for _, p := range paths {
 		if err := os.MkdirAll(path.Join(root, p), 0755); err != nil {
 			return nil, err
+		}
+	}
+
+	for _, option := range options {
+		key, val, err := utils.ParseKeyValueOpt(option)
+		if err != nil {
+			return nil, err
+		}
+		key = strings.ToLower(key)
+		switch key {
+		case "aufs.defaultquota":
+			size, err := units.FromHumanSize(val)
+			if err != nil {
+				return nil, err
+			}
+			quota = uint64(size)
+		default:
+			return nil, fmt.Errorf("Unknown option %s\n", key)
 		}
 	}
 	return a, nil
@@ -162,9 +180,14 @@ func (a Driver) Exists(id string) bool {
 
 // Three folders are created for each id
 // mnt, layers, and diff
-func (a *Driver) Create(id, parent string, quota int64) error {
+func (a *Driver) Create(id, parent string, isContainer bool) error {
 	if err := a.createDirsFor(id); err != nil {
 		return err
+	}
+	if isContainer {
+		if err := a.createQuotaFile(id); err != nil {
+			return err
+		}
 	}
 	// Write the layers metadata
 	f, err := os.Create(path.Join(a.rootPath(), "layers", id))
@@ -186,12 +209,6 @@ func (a *Driver) Create(id, parent string, quota int64) error {
 			if _, err := fmt.Fprintln(f, i); err != nil {
 				return err
 			}
-		}
-	}
-
-	if quota > 0 {
-		if err := a.limitContainer(id, quota); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -225,7 +242,7 @@ func (a *Driver) Remove(id string) error {
 	if err := a.unmount(id); err != nil {
 		return err
 	}
-	if err := a.unLimitContainer(id); err != nil {
+	if err := a.deleteQuotaFile(id); err != nil {
 		return err
 	}
 	tmpDirs := []string{
@@ -362,6 +379,10 @@ func (a *Driver) mount(id, mountLabel string) error {
 		return err
 	}
 
+	if err := a.mountQuotaFile(id); err != nil {
+		return err
+	}
+
 	if err := a.aufsMount(layers, rw, target, mountLabel); err != nil {
 		return err
 	}
@@ -373,7 +394,13 @@ func (a *Driver) unmount(id string) error {
 		return err
 	}
 	target := path.Join(a.rootPath(), "mnt", id)
-	return Unmount(target)
+	if err := Unmount(target); err != nil {
+		return err
+	}
+	if err := a.unmountQuotaFile(id); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (a *Driver) mounted(id string) (bool, error) {
@@ -441,101 +468,69 @@ func rollbackMount(target string, err error) {
 	}
 }
 
-func (a *Driver) limitContainer(id string, quota int64) error {
-	// Make sure container's quota dir exists
-	if err := os.MkdirAll(path.Join(a.rootPath(), "quota"), 0755); err != nil {
-		return fmt.Errorf("Error creating quota folder: %s", err)
-	}
-	containerQuotaFile := path.Join(a.rootPath(), "quota", id) + ".ext4"
-	containerFilesystem := path.Join(a.rootPath(), "diff", id)
-
-	cmd := "truncate"
-	opt1 := "-s"
-	opt2 := fmt.Sprintf("%sM", strconv.FormatInt(quota, 10))
-	truncateCmd := exec.Command(cmd, containerQuotaFile, opt1, opt2)
-	err := truncateCmd.Run()
-	if err != nil {
-		return fmt.Errorf("Error on truncate: %s", err)
-	}
-
-	cmd = "/sbin/mkfs"
-	opt1 = "-t"
-	opt2 = "-q"
-	opt3 := "-F"
-	mkfsCmd := exec.Command(cmd, opt1, "ext4", opt2, containerQuotaFile, opt3)
-	err = mkfsCmd.Run()
-	if err != nil {
-		return fmt.Errorf("Error on mkfs: %s", err)
-	}
-
-	text := containerQuotaFile + " " + containerFilesystem + " ext4 " + "loop,rw,usrquota,grpquota 0 0\n"
-	f, err := os.OpenFile("/etc/fstab", os.O_APPEND|os.O_RDWR, 0666)
-	if err != nil {
-		return fmt.Errorf("Error reading /etc/fstab (mount): %s", err)
-	}
-	_, err = f.WriteString(text)
-	if err != nil {
-		return fmt.Errorf("Error writing /etc/fstab (mount): %s", err)
-	}
-	f.Close()
-
-	cmd = "mount"
-	mountCmd := exec.Command(cmd, containerFilesystem)
-	err = mountCmd.Run()
-	if err != nil {
-		return fmt.Errorf("Error on mount: %s", err)
-	}
-
-	err = os.Chown(containerFilesystem, 100000, 100000)
-	if err != nil {
-		return fmt.Errorf("Error on chown of mounted folder: %s", err)
+func (a *Driver) createQuotaFile(id string) error {
+	var fstype string = "ext4"
+	containerQuotaFile := path.Join(a.rootPath(), "quota", id) + "." + fstype
+	if _, err := os.Stat(containerQuotaFile); os.IsNotExist(err) {
+		err := exec.Command("truncate", containerQuotaFile, "-s", fmt.Sprintf("%d", quota)).Run()
+		if err != nil {
+			return fmt.Errorf("Error on truncate: %s", err)
+		}
+		err = exec.Command("mkfs", "-t", fstype, "-q", "-F", containerQuotaFile).Run()
+		if err != nil {
+			return fmt.Errorf("Error on mkfs: %s", err)
+		}
 	}
 	return nil
 }
 
-func (a *Driver) unLimitContainer(id string) error {
+func (a *Driver) deleteQuotaFile(id string) error {
+	var fstype string = "ext4"
+	containerQuotaFile := path.Join(a.rootPath(), "quota", id) + "." + fstype
+	if _, err := os.Stat(containerQuotaFile); !os.IsNotExist(err) {
+		err = os.Remove(containerQuotaFile)
+		if err != nil {
+			return fmt.Errorf("Error deleting quota file: %s", err)
+		}
+	}
+	return nil
+}
+
+func (a *Driver) mountQuotaFile(id string) error {
+	var fstype string = "ext4"
+	containerQuotaFile := path.Join(a.rootPath(), "quota", id) + "." + fstype
 	containerFilesystem := path.Join(a.rootPath(), "diff", id)
-	containerQuotaFile := path.Join(a.rootPath(), "quota", id) + ".ext4"
+
+	if _, err := os.Stat(containerQuotaFile); !os.IsNotExist(err) {
+		mounted, err := mountpk.Mounted(containerFilesystem)
+		if err != nil {
+			return fmt.Errorf("Error checking mount status: %s", err)
+		}
+		if !mounted {
+			err := exec.Command("mount", "-t", fstype, "-o", "loop,rw", containerQuotaFile, containerFilesystem).Run()
+			if err != nil {
+				return fmt.Errorf("Error on mount: %s", err)
+			}
+			err = os.Chown(containerFilesystem, 100000, 100000)
+			if err != nil {
+				return fmt.Errorf("Error on chown of mounted folder: %s", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (a *Driver) unmountQuotaFile(id string) error {
+	containerFilesystem := path.Join(a.rootPath(), "diff", id)
 
 	mounted, err := mountpk.Mounted(containerFilesystem)
 	if err != nil {
 		return fmt.Errorf("Error checking mount status: %s", err)
 	}
 	if mounted {
-		cmd := "umount"
-		opt1 := "-l"
-		umountCmd := exec.Command(cmd, opt1, containerFilesystem)
-		err := umountCmd.Run()
+		err := exec.Command("umount", containerFilesystem).Run()
 		if err != nil {
 			return fmt.Errorf("Error on umount: %s", err)
-		}
-
-		var deleteRegexp = regexp.MustCompile(".*" + containerFilesystem + ".*\n")
-		data, err := ioutil.ReadFile("/etc/fstab")
-		if err != nil {
-			fmt.Errorf("Error reading /etc/fstab (unmount): %s", err)
-		}
-		newDataString := deleteRegexp.ReplaceAllString(string(data), "")
-		newData := []byte(newDataString)
-		err = ioutil.WriteFile("/etc/fstab", newData, 0644)
-		if err != nil {
-			fmt.Errorf("Error writing /etc/fstab (unmount): %s", err)
-		}
-
-		data, err = ioutil.ReadFile("/etc/mtab")
-		if err != nil {
-			return fmt.Errorf("Error reading /etc/mtab (unmount): %s", err)
-		}
-		newDataString = deleteRegexp.ReplaceAllString(string(data), "")
-		newData = []byte(newDataString)
-		err = ioutil.WriteFile("/etc/mtab", newData, 0644)
-		if err != nil {
-			return fmt.Errorf("Error writing /etc/mtab (unmount): %s", err)
-		}
-
-		err = os.Remove(containerQuotaFile)
-		if err != nil {
-			return fmt.Errorf("Error deleting quota file: %s", err)
 		}
 	}
 
