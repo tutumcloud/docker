@@ -528,7 +528,7 @@ func (a *Driver) unmountQuotaFile(id string) error {
 		return fmt.Errorf("Error checking mount status: %s", err)
 	}
 	if mounted {
-		err := exec.Command("umount", containerFilesystem).Run()
+		err := exec.Command("umount", "-l", containerFilesystem).Run()
 		if err != nil {
 			return fmt.Errorf("Error on umount: %s", err)
 		}
