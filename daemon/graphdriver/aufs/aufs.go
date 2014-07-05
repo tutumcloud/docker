@@ -30,9 +30,9 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/docker/libcontainer/label"
 	"github.com/dotcloud/docker/archive"
 	"github.com/dotcloud/docker/daemon/graphdriver"
-	"github.com/dotcloud/docker/pkg/label"
 	mountpk "github.com/dotcloud/docker/pkg/mount"
 	"github.com/dotcloud/docker/utils"
 	"github.com/dotcloud/docker/pkg/units"
@@ -324,7 +324,7 @@ func (a *Driver) Put(id string) {
 
 // Returns an archive of the contents for the id
 func (a *Driver) Diff(id string) (archive.Archive, error) {
-	return archive.TarFilter(path.Join(a.rootPath(), "diff", id), &archive.TarOptions{
+	return archive.TarWithOptions(path.Join(a.rootPath(), "diff", id), &archive.TarOptions{
 		Compression: archive.Uncompressed,
 	})
 }

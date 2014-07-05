@@ -4,29 +4,55 @@ page_keywords: API, Docker, rcli, REST, documentation
 
 # Docker Remote API
 
- - The Remote API is replacing rcli
- - By default the Docker daemon listens on unix:///var/run/docker.sock
-   and the client must have root access to interact with the daemon
- - If a group named *docker* exists on your system, docker will apply
-   ownership of the socket to the group
+ - The Remote API is replacing `rcli`.
+ - By default the Docker daemon listens on `unix:///var/run/docker.sock`
+   and the client must have `root` access to interact with the daemon.
+ - If a group named `docker` exists on your system, docker will apply
+   ownership of the socket to the group.
  - The API tends to be REST, but for some complex commands, like attach
-   or pull, the HTTP connection is hijacked to transport stdout stdin
-   and stderr
+   or pull, the HTTP connection is hijacked to transport STDOUT, STDIN,
+   and STDERR.
  - Since API version 1.2, the auth configuration is now handled client
-   side, so the client has to send the authConfig as POST in /images/(name)/push
+   side, so the client has to send the `authConfig` as a `POST` in `/images/(name)/push`.
  - authConfig, set as the `X-Registry-Auth` header, is currently a Base64
-   encoded (json) string with credentials:
+   encoded (JSON) string with credentials:
    `{'username': string, 'password': string, 'email': string, 'serveraddress' : string}`
 
+The current version of the API is v1.13
 
+Calling `/images/<name>/insert` is the same as calling
+`/v1.13/images/<name>/insert`.
 
-The current version of the API is v1.12
+You can still call an old version of the API using
+`/v1.12/images/<name>/insert`.
 
-Calling /images/<name>/insert is the same as calling
-/v1.12/images/<name>/insert
+## v1.13
 
-You can still call an old version of the api using
-/v1.12/images/<name>/insert
+### Full Documentation
+
+[*Docker Remote API v1.13*](/reference/api/docker_remote_api_v1.13/)
+
+### What's new
+
+`GET /containers/(name)/json`
+
+**New!**
+The `HostConfig.Links` field is now filled correctly
+
+**New!**
+`Sockets` parameter added to the `/info` endpoint listing all the sockets the 
+daemon is configured to listen on.
+
+`POST /containers/(name)/start`
+`POST /containers/(name)/stop`
+
+**New!**
+`start` and `stop` will now return 304 if the container's status is not modified
+
+`POST /commit`
+
+**New!**
+Added a `pause` parameter (default `true`) to pause the container during commit
 
 ## v1.12
 
@@ -51,7 +77,7 @@ All the JSON keys are now in CamelCase
 Trusted builds are now Automated Builds - `is_trusted` is now `is_automated`.
 
 **Removed Insert Endpoint**
-The insert endpoint has been removed.
+The `insert` endpoint has been removed.
 
 ## v1.11
 
@@ -96,7 +122,7 @@ You can now use the force parameter to force delete of an
 `DELETE /containers/(id)`
 
 **New!**
-You can now use the force paramter to force delete a
+You can now use the force parameter to force delete a
     container, even if it is currently running
 
 ## v1.9
@@ -352,7 +378,7 @@ List containers (/containers/json):
 
 Start containers (/containers/<id>/start):
 
- - You can now pass host-specific configuration (e.g. bind mounts) in
+ - You can now pass host-specific configuration (e.g., bind mounts) in
    the POST body for start calls
 
 ## v1.2
