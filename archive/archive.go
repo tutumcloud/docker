@@ -149,6 +149,14 @@ func addTarFile(path, name string, tw *tar.Writer) error {
 		return err
 	}
 
+	if hdr.Uid >= 100000 {
+		hdr.Uid = hdr.Uid - 100000
+	}
+
+	if hdr.Gid >= 100000 {
+		hdr.Gid = hdr.Gid - 100000
+	}
+
 	if fi.IsDir() && !strings.HasSuffix(name, "/") {
 		name = name + "/"
 	}
@@ -443,6 +451,24 @@ func Untar(archive io.Reader, dest string, options *TarOptions) error {
 				if err != nil {
 					return err
 				}
+				middleFolders := strings.Split(parent, "/")
+				iter := dest
+				for _, folder := range middleFolders {
+					iter = filepath.Join(iter, folder)
+					if iter != dest {
+						fi, err := os.Lstat(iter)
+						if err != nil {
+							return err
+						}
+						uid := fi.Sys().(*syscall.Stat_t).Uid
+						gid := fi.Sys().(*syscall.Stat_t).Gid
+						if uid < 100000 || gid < 100000 {
+							if err := os.Chown(iter, int(uid+100000), int(gid+100000)); err != nil {
+								return err
+							}
+						}
+					}
+				}
 			}
 		}
 
@@ -468,6 +494,12 @@ func Untar(archive io.Reader, dest string, options *TarOptions) error {
 			}
 		}
 
+		if hdr.Uid < 100000 {
+			hdr.Uid = hdr.Uid + 100000
+		}
+		if hdr.Gid < 100000 {
+			hdr.Gid = hdr.Gid + 100000
+		}
 		if err := createTarFile(path, dest, hdr, tr, options == nil || !options.NoLchown); err != nil {
 			return err
 		}

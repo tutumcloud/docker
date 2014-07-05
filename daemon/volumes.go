@@ -40,6 +40,14 @@ func setupMountsForContainer(container *Container) error {
 		{container.ResolvConfPath, "/etc/resolv.conf", false, true},
 	}
 
+	if err := os.Chown(container.root, 100000, 100000); err != nil {
+		return err
+	}
+
+	if err := os.Chown(container.RootfsPath(), 100000, 100000); err != nil {
+		return err
+	}
+
 	if container.HostnamePath != "" {
 		mounts = append(mounts, execdriver.Mount{container.HostnamePath, "/etc/hostname", false, true})
 	}
@@ -289,6 +297,10 @@ func initializeVolume(container *Container, volPath string, binds map[string]Bin
 	container.VolumesRW[volPath] = srcRW
 
 	if err := createIfNotExists(source, volIsDir); err != nil {
+		return err
+	}
+
+	if err := os.Chown(source, 100000, 100000); err != nil {
 		return err
 	}
 

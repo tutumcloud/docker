@@ -61,7 +61,7 @@ func copyDir(src, dst string) error {
 
 func (d *Driver) Create(id, parent string, isContainer bool) error {
 	dir := d.dir(id)
-	if err := os.MkdirAll(path.Dir(dir), 0700); err != nil {
+	if err := os.MkdirAll(path.Dir(dir), 0711); err != nil {
 		return err
 	}
 	if err := os.Mkdir(dir, 0755); err != nil {
