@@ -130,8 +130,19 @@ func (container *Container) parseVolumeMountConfig() (map[string]*Mount, error) 
 		if err != nil {
 			return nil, err
 		}
+
+		// Maybe this is a volume name
+		if !filepath.IsAbs(path) {
+			v := container.daemon.volumes.Find(path)
+			if v == nil {
+				return nil, fmt.Errorf("Invalid bind-mount specification, cannot use relative path: %s", spec)
+			}
+			path = v.Path
+			writable = writable && v.Writable
+		}
+
 		// Check if a volume already exists for this and use it
-		vol, err := container.daemon.volumes.FindOrCreateVolume(path, writable)
+		vol, err := container.daemon.volumes.FindOrCreateVolume(path, "", writable)
 		if err != nil {
 			return nil, err
 		}
@@ -140,6 +151,7 @@ func (container *Container) parseVolumeMountConfig() (map[string]*Mount, error) 
 			volume:      vol,
 			MountToPath: mountToPath,
 			Writable:    writable,
+			copyData:    !vol.IsBindMount,
 		}
 	}
 
@@ -156,7 +168,7 @@ func (container *Container) parseVolumeMountConfig() (map[string]*Mount, error) 
 			continue
 		}
 
-		vol, err := container.daemon.volumes.FindOrCreateVolume("", true)
+		vol, err := container.daemon.volumes.FindOrCreateVolume("", "", true)
 		if err != nil {
 			return nil, err
 		}
@@ -190,10 +202,6 @@ func parseBindMountSpec(spec string) (string, string, bool, error) {
 		writable = validMountMode(arr[2]) && arr[2] == "rw"
 	default:
 		return "", "", false, fmt.Errorf("Invalid volume specification: %s", spec)
-	}
-
-	if !filepath.IsAbs(path) {
-		return "", "", false, fmt.Errorf("cannot bind mount volume: %s volume paths must be absolute.", path)
 	}
 
 	path = filepath.Clean(path)
@@ -265,7 +273,7 @@ func (container *Container) setupMounts() error {
 }
 
 func parseVolumesFromSpec(daemon *Daemon, spec string) (map[string]*Mount, error) {
-	specParts := strings.SplitN(spec, ":", 2)
+	specParts := strings.Split(spec, ":")
 	if len(specParts) == 0 {
 		return nil, fmt.Errorf("Malformed volumes-from specification: %s", spec)
 	}
@@ -277,21 +285,66 @@ func parseVolumesFromSpec(daemon *Daemon, spec string) (map[string]*Mount, error
 
 	mounts := c.VolumeMounts()
 
-	if len(specParts) == 2 {
-		mode := specParts[1]
-		if !validMountMode(mode) {
-			return nil, fmt.Errorf("Invalid mode for volumes-from: %s", mode)
+	switch len(specParts) {
+	case 1: // volumes-from foo
+		return mounts, nil
+	case 2: // `volumes-from foo:ro` or `volumes-from foo:/bar`
+		if validMountMode(specParts[1]) {
+			// volumes-from foo:ro
+			for _, mnt := range mounts {
+				// Ensure that if the inherited volume is not writable, that we don't make
+				// it writable here
+				mnt.Writable = determineMountWritable(specParts[1], mnt.Writable)
+			}
+			return mounts, nil
 		}
-
-		// Set the mode for the inheritted volume
-		for _, mnt := range mounts {
-			// Ensure that if the inherited volume is not writable, that we don't make
-			// it writable here
-			mnt.Writable = mnt.Writable && (mode == "rw")
+		// This should be a mount path within the passed in container
+		if !filepath.IsAbs(specParts[1]) {
+			return nil, fmt.Errorf("Invalid volumes-from spec: %s", spec)
 		}
+		if _, exists := mounts[specParts[1]]; !exists {
+			return nil, fmt.Errorf("Could not find volume for: %s", spec)
+		}
+		// volumes-from foo:/bar
+		mount := mounts[specParts[1]]
+		return map[string]*Mount{specParts[1]: mount}, nil
+	case 3: // `volumes-from foo:/bar:ro` or // `volumes-from foo:/bar:/baz
+		if validMountMode(specParts[2]) {
+			// volumes-from foo:/bar:ro
+			mount := mounts[specParts[1]]
+			mount.Writable = determineMountWritable(specParts[2], mount.Writable)
+			return map[string]*Mount{specParts[1]: mount}, nil
+		}
+		if !filepath.IsAbs(specParts[1]) || !filepath.IsAbs(specParts[2]) {
+			return nil, fmt.Errorf("Invalid volumes-from spec: %s", spec)
+		}
+		if _, exists := mounts[specParts[1]]; !exists {
+			return nil, fmt.Errorf("Could not find volume for: %s", spec)
+		}
+		// volumes-from foo:/bar:/baz
+		mount := mounts[specParts[1]]
+		mount.MountToPath = specParts[2]
+		return map[string]*Mount{specParts[2]: mount}, nil
+	case 4: // volumes-from foo:/bar:/baz:ro
+		if !validMountMode(specParts[3]) {
+			return nil, fmt.Errorf("Invalid volumes-from spec: %s", spec)
+		}
+		if !filepath.IsAbs(specParts[1]) || !filepath.IsAbs(specParts[2]) {
+			return nil, fmt.Errorf("Invalid volumes-from spec: %s", spec)
+		}
+		if _, exists := mounts[specParts[1]]; !exists {
+			return nil, fmt.Errorf("Invalid volumes-from spec: %s", spec)
+		}
+		mount := mounts[specParts[1]]
+		mount.MountToPath = specParts[2]
+		mount.Writable = determineMountWritable(specParts[3], mount.Writable)
+		return map[string]*Mount{specParts[2]: mount}, nil
 	}
+	return nil, nil
+}
 
-	return mounts, nil
+func determineMountWritable(modeSpec string, parentWritable bool) bool {
+	return parentWritable && (modeSpec == "rw")
 }
 
 func (container *Container) VolumeMounts() map[string]*Mount {

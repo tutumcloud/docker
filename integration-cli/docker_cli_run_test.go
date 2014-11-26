@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -404,7 +405,7 @@ func TestRunVolumesFromInReadWriteMode(t *testing.T) {
 	}
 
 	cmd = exec.Command(dockerBinary, "run", "--volumes-from", "parent:bar", "busybox", "touch", "/test/file")
-	if out, _, err := runCommandWithOutput(cmd); err == nil || !strings.Contains(out, "Invalid mode for volumes-from: bar") {
+	if out, _, err := runCommandWithOutput(cmd); err == nil || !strings.Contains(out, "Invalid volumes-from spec: parent:bar") {
 		t.Fatalf("running --volumes-from foo:bar should have failed with invalid mount mode: %q", out)
 	}
 
@@ -445,7 +446,7 @@ func TestVolumesFromGetsProperMode(t *testing.T) {
 }
 
 // Test for #1351
-func TestRunApplyVolumesFromBeforeVolumes(t *testing.T) {
+func TestRunVolumesFromApplyBeforeVolumes(t *testing.T) {
 	cmd := exec.Command(dockerBinary, "run", "--name", "parent", "-v", "/test", "busybox", "touch", "/test/foo")
 	if _, err := runCommand(cmd); err != nil {
 		t.Fatal(err)
@@ -2712,4 +2713,90 @@ func TestRunTLSverify(t *testing.T) {
 	}
 
 	logDone("run - verify tls is set for --tlsverify")
+}
+
+func TestRunVolumeReferenceByName(t *testing.T) {
+	defer deleteAllContainers()
+
+	cmd := exec.Command(dockerBinary, "volumes", "create", "--name", "foo")
+	if _, err := runCommand(cmd); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd = exec.Command(dockerBinary, "run", "--name", "baz", "-v", "foo:/bar", "busybox", "ls", "/bar")
+	if out, _, err := runCommandWithOutput(cmd); err != nil {
+		t.Fatal(err, out)
+	}
+
+	volPath, err := inspectVolumeField("foo", "Path")
+	if err != nil {
+		t.Fatal(err, volPath)
+	}
+
+	out, err := inspectFieldJSON("baz", "Volumes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vols map[string]string
+	json.Unmarshal([]byte(out), &vols)
+	if vols["/bar"] != volPath {
+		t.Fatalf("Expected container volume and manually created volume paths to match: %v != %v", vols["/bar"], volPath)
+	}
+
+	logDone("run - reference volume by name")
+}
+
+func TestRunVolumesFromReferenceByAlias(t *testing.T) {
+	defer deleteAllContainers()
+
+	cmd := exec.Command(dockerBinary, "run", "--name", "baz", "-v", "/bar", "busybox", "ls", "/bar")
+	if _, err := runCommand(cmd); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd = exec.Command(dockerBinary, "run", "--name", "qux", "--volumes-from", "baz:/bar", "busybox", "ls", "/bar")
+	if out, _, err := runCommandWithOutput(cmd); err != nil {
+		t.Fatal(err, out)
+	}
+
+	cmd = exec.Command(dockerBinary, "inspect", "--format", "index .Volumes \"/bar\"", "baz")
+	out, _, err := runCommandWithOutput(cmd)
+	if err != nil {
+		t.Fatal(err, out)
+	}
+	vol1 := strings.TrimSpace(out)
+
+	cmd = exec.Command(dockerBinary, "inspect", "--format", "index .Volumes \"/bar\"", "qux")
+	out, _, err = runCommandWithOutput(cmd)
+	if err != nil {
+		t.Fatal(err, out)
+	}
+	vol2 := strings.TrimSpace(out)
+
+	if vol1 != vol2 {
+		t.Fatalf("Expected volume paths to be the same: %s - %s", vol1, vol2)
+	}
+
+	logDone("run - volumes-from by alias")
+}
+
+func TestRunVolumesFromCustomMountPoint(t *testing.T) {
+	defer deleteAllContainers()
+
+	cmd := exec.Command(dockerBinary, "run", "--name", "baz", "-v", "/bar", "busybox", "ls", "/bar")
+	if _, err := runCommand(cmd); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd = exec.Command(dockerBinary, "run", "--volumes-from", "baz:/bar:/foo", "busybox", "ls", "/foo")
+	if out, _, err := runCommandWithOutput(cmd); err != nil {
+		t.Fatal(err, out)
+	}
+
+	cmd = exec.Command(dockerBinary, "run", "--volumes-from", "baz:/bar:/foo:ro", "busybox", "touch", "/foo/bar")
+	if out, _, err := runCommandWithOutput(cmd); err == nil || !strings.Contains(out, "/foo/bar: Read-only file system") {
+		t.Fatal("Expected /foo to be read-only")
+	}
+
+	logDone("run - volumes-from with custom mount point")
 }
